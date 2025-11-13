@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Điều Khiển Động Cơ ESP32</title>
+    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+    <style>
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            min-height: 100vh; 
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: rgba(255,255,255,0.1);
+            padding: 25px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            opacity: 0.9;
+        }
+        
+        .connection-status {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.1em;
+            transition: all 0.3s;
+        }
+        
+        .connected {
+            background: #4CAF50;
+        }
+        
+        .disconnected {
+            background: #f44336;
+        }
+        
+        .connecting {
+            background: #ff9800;
+        }
+        
+        .button-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 25px 0;
+        }
+        
+        .control-btn {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 20px 15px;
+            font-size: 18px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        
+        .control-btn:active {
+            transform: translateY(0);
+        }
+        
+        .forward-btn { 
+            background: #2196F3; 
+            grid-column: 1 / 3;
+        }
+        
+        .backward-btn { 
+            background: #FF9800; 
+        }
+        
+        .stop-btn { 
+            background: #f44336; 
+        }
+        
+        .speed-control {
+            background: rgba(255,255,255,0.15);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+        }
+        
+        .speed-control h3 {
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .speed-slider {
+            width: 100%;
+            margin: 15px 0;
+            height: 20px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.2);
+            outline: none;
+        }
+        
+        .speed-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .status-panel {
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .status-panel h3 {
+            margin-bottom: 15px;
+        }
+        
+        #motorStatus {
+            font-size: 1.3em;
+            font-weight: bold;
+            min-height: 30px;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            transition: all 0.3s;
+        }
+        
+        @media (max-width: 480px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.6em;
+            }
+            
+            .control-btn {
+                padding: 18px 12px;
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Điều Khiển Động Cơ</h1>
+            <p>Điều khiển từ xa qua Internet</p>
+        </div>
+        
+        <div class="connection-status connecting" id="connectionStatus">
+            🔄 Đang kết nối đến HiveMQ Cloud...
+        </div>
+        
+        <div class="button-grid">
+            <button class="control-btn forward-btn" onclick="sendCommand('FORWARD')">
+                ▶️ TIẾN
+            </button>
+            <button class="control-btn backward-btn" onclick="sendCommand('BACKWARD')">
+                ◀️ LÙI
+            </button>
+            <button class="control-btn stop-btn" onclick="sendCommand('STOP')">
+                ⏹️ DỪNG
+            </button>
+        </div>
+        
+        <div class="speed-control">
+            <h3>🎚️ ĐIỀU CHỈNH TỐC ĐỘ</h3>
+            <input type="range" class="speed-slider" id="speedSlider" 
+                   min="1" max="20" value="2" oninput="updateSpeed(this.value)">
+            <div style="text-align: center; margin-top: 10px;">
+                Độ trễ: <span class="speed-value" id="speedValue">2</span>ms 
+                <br><small>(Thấp hơn = Nhanh hơn)</small>
+            </div>
+        </div>
+        
+        <div class="status-panel">
+            <h3>📊 TRẠNG THÁI ĐỘNG CƠ</h3>
+            <div id="motorStatus">Đang chờ kết nối...</div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; font-size: 0.9em; opacity: 0.7;">
+            Kết nối: HiveMQ Cloud | Broker: ca2c2e488f0449c3b11aa6751469e7b2.s1.eu.hivemq.cloud
+        </div>
+    </div>
+
+    <script>
+        // MQTT Configuration
+        const MQTT_CONFIG = {
+            protocol: 'wss',
+            host: 'ca2c2e488f0449c3b11aa6751469e7b2.s1.eu.hivemq.cloud',
+            port: 8884,
+            clientId: 'web_' + Math.random().toString(36).substr(2, 9),
+            username: 'finaliot',
+            password: 'Abc@12345',
+            topics: {
+                control: 'nhk/motor/control',
+                status: 'nhk/motor/status',
+                speed: 'nhk/motor/speed'
+            }
+        };
+
+        let mqttClient = null;
+        let isConnected = false;
+
+        function connectMQTT() {
+            updateConnectionStatus(false, '🔄 Đang kết nối đến HiveMQ Cloud...');
+            
+            const connectionString = `${MQTT_CONFIG.protocol}://${MQTT_CONFIG.host}:${MQTT_CONFIG.port}/mqtt`;
+            
+            console.log('Connecting to:', connectionString);
+            
+            mqttClient = mqtt.connect(connectionString, {
+                username: MQTT_CONFIG.username,
+                password: MQTT_CONFIG.password,
+                clientId: MQTT_CONFIG.clientId,
+                clean: true,
+                reconnectPeriod: 1000,
+                connectTimeout: 10000
+            });
+
+            mqttClient.on('connect', function () {
+                console.log('✅ Connected to HiveMQ Cloud');
+                isConnected = true;
+                updateConnectionStatus(true, '✅ Đã kết nối HiveMQ Cloud');
+                
+                mqttClient.subscribe(MQTT_CONFIG.topics.status, function (err) {
+                    if (!err) {
+                        console.log('📡 Subscribed to:', MQTT_CONFIG.topics.status);
+                    } else {
+                        console.error('❌ Subscribe error:', err);
+                    }
+                });
+            });
+
+            mqttClient.on('message', function (topic, message) {
+                const payload = message.toString();
+                console.log('📨 Received:', payload);
+                document.getElementById('motorStatus').textContent = payload;
+                
+                // Update status color
+                const statusElement = document.getElementById('motorStatus');
+                if (payload.includes('FORWARD')) {
+                    statusElement.style.color = '#4CAF50';
+                } else if (payload.includes('BACKWARD')) {
+                    statusElement.style.color = '#2196F3';
+                } else if (payload.includes('STOP')) {
+                    statusElement.style.color = '#f44336';
+                } else {
+                    statusElement.style.color = 'white';
+                }
+            });
+
+            mqttClient.on('error', function (error) {
+                console.error('❌ MQTT Error:', error);
+                updateConnectionStatus(false, '❌ Lỗi kết nối: ' + error);
+                isConnected = false;
+            });
+
+            mqttClient.on('close', function () {
+                console.log('🔌 Connection closed');
+                updateConnectionStatus(false, '🔌 Mất kết nối');
+                isConnected = false;
+            });
+        }
+
+        function sendCommand(command) {
+            if (!isConnected || !mqttClient) {
+                alert('Chưa kết nối đến MQTT Broker. Vui lòng chờ...');
+                return;
+            }
+            
+            try {
+                mqttClient.publish(MQTT_CONFIG.topics.control, command);
+                console.log('📤 Sent command:', command);
+                document.getElementById('motorStatus').textContent = `Đang gửi: ${command}...`;
+                document.getElementById('motorStatus').style.color = '#ff9800';
+            } catch (error) {
+                console.error('❌ Send error:', error);
+                alert('Lỗi khi gửi lệnh: ' + error);
+            }
+        }
+
+        function updateSpeed(speed) {
+            document.getElementById('speedValue').textContent = speed;
+            
+            if (!isConnected) {
+                console.log('Not connected, skipping speed update');
+                return;
+            }
+            
+            try {
+                mqttClient.publish(MQTT_CONFIG.topics.speed, speed.toString());
+                console.log('🎚️ Speed set to:', speed + 'ms');
+            } catch (error) {
+                console.error('❌ Speed update error:', error);
+            }
+        }
+
+        function updateConnectionStatus(connected, message) {
+            const statusElement = document.getElementById('connectionStatus');
+            statusElement.textContent = message;
+            
+            if (connected) {
+                statusElement.className = 'connection-status connected';
+            } else if (message.includes('Đang kết nối')) {
+                statusElement.className = 'connection-status connecting';
+            } else {
+                statusElement.className = 'connection-status disconnected';
+            }
+        }
+
+        // Initialize when page loads
+        window.onload = function() {
+            console.log('🌐 Motor Control Web Interface Started');
+            connectMQTT();
+        };
+
+        // Auto-reconnect every 15 seconds if disconnected
+        setInterval(() => {
+            if (!isConnected) {
+                console.log('🔄 Attempting to reconnect...');
+                connectMQTT();
+            }
+        }, 15000);
+    </script>
+</body>
+</html>
